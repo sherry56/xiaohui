@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小灰编程 · 3D 粒子操作系统</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <style>
+        /* ==================== 全局变量与重置 ==================== */
+        :root {
+            --bg-color: #05070a;
+            --primary-color: #00f3ff; /* 默认霓虹蓝 */
+            --glass-bg: rgba(20, 30, 40, 0.4);
+            --glass-border: rgba(255, 255, 255, 0.1);
+            --text-main: #ffffff;
+            --text-dim: #a0a0a0;
+            --font-stack: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: var(--font-stack);
+            overflow: hidden; /* 防止滚动 */
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+
+        /* ==================== 3D 背景容器 ==================== */
+        #canvas-container {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1; /* 最底层 */
+            background: radial-gradient(circle at center, #1a1f35 0%, #000000 100%);
+        }
+
+        /* ==================== UI 层布局 ==================== */
+        #ui-layer {
+            position: relative;
+            z-index: 10; /* 在 Canvas 之上 */
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            pointer-events: none; /* 让鼠标事件能穿透到 3D 场景，但在具体面板上要恢复 */
+        }
+
+        /* 顶部标题区 */
+        header {
+            text-align: center;
+            padding: 20px 0;
+            background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+            pointer-events: auto;
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            letter-spacing: 4px;
+            text-shadow: 0 0 10px var(--primary-color);
+            margin-bottom: 5px;
+        }
+
+        .subtitle {
+            font-size: 0.9rem;
+            color: var(--primary-color);
+            opacity: 0.8;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        /* 主体网格布局 */
+        .main-content {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 350px 1fr 350px; /* 左、中、右 */
+            gap: 20px;
+            padding: 20px 40px;
+        }
+
+        /* 玻璃拟态面板通用样式 */
+        .panel {
+            background: var(--glass-bg);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            padding: 20px;
+            pointer-events: auto; /* 恢复鼠标交互 */
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+            transition: border-color 0.3s ease;
+        }
+        
+        .panel:hover {
+            border-color: var(--primary-color);
+        }
+
+        .panel-title {
+            font-size: 1.1rem;
+            border-bottom: 1px solid var(--glass-border);
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+            color: var(--primary-color);
+            font-weight: 600;
+        }
+
+        /* ==================== 左侧：摄像头区域 ==================== */
+        .camera-wrapper {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 15px;
+            border: 1px solid #333;
+        }
+
+        video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* 镜像翻转 */
+        }
+
+        /* 覆盖层：用于绘制识别框 */
+        #overlay-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1); /* 同样镜像翻转以匹配视频 */
+        }
+
+        .cam-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .btn {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid var(--primary-color);
+            background: rgba(0, 243, 255, 0.1);
+            color: var(--text-main);
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            background: var(--primary-color);
+            color: #000;
+            box-shadow: 0 0 15px var(--primary-color);
+        }
+
+        .btn.stop {
+            border-color: #ff4757;
+            background: rgba(255, 71, 87, 0.1);
+        }
+        .btn.stop:hover {
+            background: #ff4757;
+            box-shadow: 0 0 15px #ff4757;
+        }
+
+        .status-box {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            font-family: monospace;
+            border-left: 3px solid var(--primary-color);
+        }
+
+        /* ==================== 中间：仅占位 ==================== */
+        .center-area {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            pointer-events: none; /* 让鼠标穿透去操作粒子 */
+        }
+        /* 可选：在中间加一个淡淡的 Logo 或水印 */
+        .center-watermark {
+            opacity: 0.1;
+            font-size: 5rem;
+            font-weight: bold;
+            color: var(--primary-color);
+            text-transform: uppercase;
+        }
+
+        /* ==================== 右侧：信息与控制 ==================== */
+        .code-block {
+            background: #0d1117;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.8rem;
+            color: #d1d5db;
+            margin-bottom: 20px;
+            border: 1px solid #30363d;
+            height: 120px;
+            overflow: hidden;
+        }
+        .code-line { margin-bottom: 4px; }
+        .keyword { color: #ff7b72; }
+        .string { color: #a5d6ff; }
+        .func { color: #d2a8ff; }
+
+        .control-group {
+            margin-bottom: 15px;
+        }
+        .control-label {
+            display: block;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+            color: var(--text-dim);
+        }
+
+        /* 自定义下拉框 */
+        select {
+            width: 100%;
+            padding: 8px;
+            background: rgba(0,0,0,0.5);
+            border: 1px solid var(--glass-border);
+            color: white;
+            border-radius: 4px;
+            outline: none;
+        }
+
+        /* 颜色切换按钮 */
+        .theme-options {
+            display: flex;
+            gap: 10px;
+        }
+        .theme-btn {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        .theme-btn:hover { transform: scale(1.1); }
+        .theme-btn.active { border-color: white; box-shadow: 0 0 10px white; }
+
+        /* 响应式调整 */
+        @media (max-width: 1024px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                overflow-y: auto;
+            }
+            .center-area { display: none; }
+            #ui-layer { overflow-y: auto; pointer-events: auto; }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="canvas-container"></div>
+
+    <div id="ui-layer">
+        <header>
+            <h1>小灰编程</h1>
+            <div class="subtitle">3D 粒子操作系统 · 视觉识别交互演示</div>
+        </header>
+
+        <div class="main-content">
+            <section class="panel" id="left-panel">
+                <div class="panel-title">视觉传感器</div>
+                
+                <div class="camera-wrapper">
+                    <video id="webcam" autoplay playsinline muted></video>
+                    <canvas id="overlay-canvas"></canvas>
+                </div>
+
+                <div class="cam-controls">
+                    <button class="btn" id="btn-start">开始摄像头</button>
+                    <button class="btn stop" id="btn-stop">停止摄像头</button>
+                </div>
+
+                <div class="status-box" id="status-text">
+                    当前状态：等待启动摄像头...
+                </div>
+            </section>
+
+            <section class="center-area">
+                <div class="center-watermark">OS CORE</div>
+            </section>
+
+            <section class="panel" id="right-panel">
+                <div class="panel-title">系统控制终端</div>
+                
+                <p style="font-size: 0.9rem; color: #ccc; margin-bottom: 15px;">
+                    欢迎进入小灰编程的 3D 粒子交互界面。在此可以通过计算机视觉与虚拟环境进行互动。
+                </p>
+
+                <div class="code-block">
+                    <div class="code-line"><span class="keyword">const</span> system = <span class="keyword">new</span> ParticleOS();</div>
+                    <div class="code-line">system.<span class="func">initVision</span>({ mode: <span class="string">'active'</span> });</div>
+                    <div class="code-line"><span class="keyword">while</span> (isRunning) {</div>
+                    <div class="code-line">&nbsp;&nbsp;let target = detector.<span class="func">scan</span>();</div>
+                    <div class="code-line">&nbsp;&nbsp;particles.<span class="func">react</span>(target);</div>
+                    <div class="code-line">}</div>
+                </div>
+
+                <div class="control-group">
+                    <span class="control-label">粒子密度 (Density)</span>
+                    <select id="density-select">
+                        <option value="low">低 (Low)</option>
+                        <option value="medium" selected>中 (Medium)</option>
+                        <option value="high">高 (High)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <span class="control-label">自动旋转 (Auto Rotation)</span>
+                    <button class="btn" id="btn-toggle-rotate" style="padding: 5px;">已开启</button>
+                </div>
+
+                <div class="control-group">
+                    <span class="control-label">主题色 (Theme Color)</span>
+                    <div class="theme-options">
+                        <div class="theme-btn active" style="background: #00f3ff;" data-color="#00f3ff"></div>
+                        <div class="theme-btn" style="background: #bd00ff;" data-color="#bd00ff"></div>
+                        <div class="theme-btn" style="background: #00ff9d;" data-color="#00ff9d"></div>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <script>
+        /* ==================== 配置与状态 ==================== */
+        const config = {
+            themeColor: 0x00f3ff, // Three.js 用的 Hex
+            themeCss: '#00f3ff',  // CSS 用的字符串
+            particleCount: 2000,
+            autoRotate: true,
+            mouseX: 0,
+            mouseY: 0
+        };
+
+        // 绑定 UI 元素
+        const statusText = document.getElementById('status-text');
+        const overlayCanvas = document.getElementById('overlay-canvas');
+        const overlayCtx = overlayCanvas.getContext('2d');
+        const video = document.getElementById('webcam');
+        
+        let stream = null;
+        let detectionInterval = null;
+
+        /* ==================== Three.js 3D 粒子系统 ==================== */
+        let scene, camera, renderer, particleSystem;
+
+        function initThree() {
+            const container = document.getElementById('canvas-container');
+            
+            // 1. 场景
+            scene = new THREE.Scene();
+            // 添加一点环境雾
+            scene.fog = new THREE.FogExp2(0x05070a, 0.002);
+
+            // 2. 相机
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.z = 50;
+
+            // 3. 渲染器
+            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            container.appendChild(renderer.domElement);
+
+            // 4. 创建粒子
+            createParticles();
+
+            // 5. 事件监听
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('mousemove', onDocumentMouseMove);
+
+            // 6. 开始动画循环
+            animate();
+        }
+
+        function createParticles() {
+            if (particleSystem) {
+                scene.remove(particleSystem);
+                particleSystem.geometry.dispose();
+                particleSystem.material.dispose();
+            }
+
+            const geometry = new THREE.BufferGeometry();
+            const positions = [];
+            const count = config.particleCount;
+
+            // 创建一个“虚拟桌面”形状的粒子场
+            // 主屏幕区域 (矩形) + 下方任务栏条
+            for (let i = 0; i < count; i++) {
+                let x, y, z;
+
+                const r = Math.random();
+                if (r < 0.8) {
+                    // 80% 的粒子组成主屏幕 (宽高比 16:9 左右)
+                    x = (Math.random() - 0.5) * 60; 
+                    y = (Math.random() - 0.5) * 35;
+                    z = (Math.random() - 0.5) * 5; // 稍微有点厚度
+                } else {
+                    // 20% 的粒子组成下方的线条/底座
+                    x = (Math.random() - 0.5) * 80;
+                    y = -20 + (Math.random() - 0.5) * 2;
+                    z = (Math.random() - 0.5) * 20; // 更有深度
+                }
+
+                positions.push(x, y, z);
+            }
+
+            geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+            // 材质
+            const material = new THREE.PointsMaterial({
+                color: config.themeColor,
+                size: 0.3,
+                transparent: true,
+                opacity: 0.8,
+                blending: THREE.AdditiveBlending
+            });
+
+            particleSystem = new THREE.Points(geometry, material);
+            scene.add(particleSystem);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const time = Date.now() * 0.0005;
+
+            // 粒子自动旋转
+            if (config.autoRotate) {
+                particleSystem.rotation.y += 0.001;
+            }
+
+            // 鼠标交互：根据鼠标位置轻微偏转视角
+            // 目标旋转角度
+            const targetRotX = config.mouseY * 0.0005;
+            const targetRotY = config.mouseX * 0.0005;
+
+            particleSystem.rotation.x += 0.05 * (targetRotX - particleSystem.rotation.x);
+            // 这里不在 Y 轴完全覆盖自动旋转，而是叠加
+            if (!config.autoRotate) {
+                particleSystem.rotation.y += 0.05 * (targetRotY - particleSystem.rotation.y);
+            }
+
+            // 粒子波动效果 (简单的正弦波)
+            const positions = particleSystem.geometry.attributes.position.array;
+            for (let i = 0; i < config.particleCount; i++) {
+                // 仅对 y 坐标做微调，模拟浮动
+                // positions[i * 3 + 1] += Math.sin(time + positions[i * 3]) * 0.02;
+            }
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+
+            renderer.render(scene, camera);
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onDocumentMouseMove(event) {
+            // 将鼠标坐标归一化到 -1 到 1
+            config.mouseX = event.clientX - window.innerWidth / 2;
+            config.mouseY = event.clientY - window.innerHeight / 2;
+        }
+
+        /* ==================== 摄像头与伪识别逻辑 ==================== */
+        
+        document.getElementById('btn-start').addEventListener('click', async () => {
+            try {
+                statusText.innerText = "状态：正在请求摄像头权限...";
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                video.srcObject = stream;
+                
+                statusText.innerText = "状态：摄像头已启动，正在初始化视觉模型...";
+                
+                // 启动伪识别循环
+                startFakeRecognition();
+            } catch (err) {
+                console.error(err);
+                statusText.innerText = "错误：无法访问摄像头 (" + err.message + ")";
+            }
+        });
+
+        document.getElementById('btn-stop').addEventListener('click', () => {
+            if (stream) {
+                const tracks = stream.getTracks();
+                tracks.forEach(track => track.stop());
+                video.srcObject = null;
+                stream = null;
+            }
+            stopFakeRecognition();
+            statusText.innerText = "状态：摄像头已停止";
+        });
+
+        function startFakeRecognition() {
+            // 确保画布尺寸匹配
+            overlayCanvas.width = video.clientWidth;
+            overlayCanvas.height = video.clientHeight;
+
+            // 清除旧的
+            if (detectionInterval) clearInterval(detectionInterval);
+
+            detectionInterval = setInterval(() => {
+                if (!stream) return;
+
+                const ctx = overlayCtx;
+                const w = overlayCanvas.width;
+                const h = overlayCanvas.height;
+
+                // 清空画布
+                ctx.clearRect(0, 0, w, h);
+
+                // 随机决定是否识别到目标 (80% 几率)
+                if (Math.random() > 0.2) {
+                    // 生成随机框
+                    const rectW = 80 + Math.random() * 100;
+                    const rectH = 80 + Math.random() * 100;
+                    const x = Math.random() * (w - rectW);
+                    const y = Math.random() * (h - rectH);
+
+                    // 绘制框
+                    ctx.strokeStyle = config.themeCss;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x, y, rectW, rectH);
+
+                    // 绘制四角装饰 (增加科技感)
+                    const lineLen = 10;
+                    ctx.lineWidth = 4;
+                    // 左上
+                    ctx.beginPath(); ctx.moveTo(x, y+lineLen); ctx.lineTo(x, y); ctx.lineTo(x+lineLen, y); ctx.stroke();
+                    // 右下
+                    ctx.beginPath(); ctx.moveTo(x+rectW, y+rectH-lineLen); ctx.lineTo(x+rectW, y+rectH); ctx.lineTo(x+rectW-lineLen, y+rectH); ctx.stroke();
+
+                    // 绘制标签背景
+                    ctx.fillStyle = config.themeCss;
+                    ctx.fillRect(x, y - 24, 120, 24);
+
+                    // 绘制标签文字
+                    ctx.fillStyle = "#000";
+                    ctx.font = "bold 12px monospace";
+                    const labels = ["已识别: 人脸", "已识别: 手势", "目标锁定: ID_92", "分析中..."];
+                    const label = labels[Math.floor(Math.random() * labels.length)];
+                    ctx.fillText(label, x + 5, y - 8);
+
+                    statusText.innerText = `状态：${label} (置信度 ${(85 + Math.random()*14).toFixed(1)}%)`;
+                    statusText.style.borderLeftColor = config.themeCss;
+                } else {
+                    statusText.innerText = "状态：正在扫描区域...";
+                }
+
+            }, 800); // 每 800ms 更新一次识别状态
+        }
+
+        function stopFakeRecognition() {
+            if (detectionInterval) clearInterval(detectionInterval);
+            overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        }
+
+        /* ==================== 右侧控制面板逻辑 ==================== */
+
+        // 1. 密度切换
+        document.getElementById('density-select').addEventListener('change', (e) => {
+            const val = e.target.value;
+            if (val === 'low') config.particleCount = 1000;
+            else if (val === 'medium') config.particleCount = 2000;
+            else if (val === 'high') config.particleCount = 5000;
+            
+            createParticles();
+        });
+
+        // 2. 旋转开关
+        const rotateBtn = document.getElementById('btn-toggle-rotate');
+        rotateBtn.addEventListener('click', () => {
+            config.autoRotate = !config.autoRotate;
+            rotateBtn.innerText = config.autoRotate ? "已开启" : "已关闭";
+            rotateBtn.style.opacity = config.autoRotate ? "1" : "0.5";
+        });
+
+        // 3. 主题色切换
+        const themeBtns = document.querySelectorAll('.theme-btn');
+        themeBtns.forEach(btn => {
+            btn.addEventListener('click', () => {
+                // UI 更新
+                themeBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                const color = btn.getAttribute('data-color');
+                config.themeCss = color;
+                config.themeColor = new THREE.Color(color);
+
+                // CSS 变量更新
+                document.documentElement.style.setProperty('--primary-color', color);
+
+                // Three.js 材质更新
+                if (particleSystem) {
+                    particleSystem.material.color = config.themeColor;
+                }
+            });
+        });
+
+        /* ==================== 初始化 ==================== */
+        window.onload = initThree;
+
+    </script>
+</body>
+</html>
