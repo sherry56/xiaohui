@@ -3,144 +3,89 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小灰编程 · MediaPipe 骨骼追踪修复版</title>
+    <title>小灰编程 · 纯骨骼算法手势引擎</title>
     
     <!-- Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     
     <style>
-        :root {
-            --primary: #00f3ff;
-            --bg: #05070a;
-            --glass: rgba(20, 30, 40, 0.8);
-            --border: rgba(255, 255, 255, 0.2);
-        }
-
-        body { margin: 0; overflow: hidden; background: var(--bg); font-family: 'Segoe UI', sans-serif; user-select: none; }
-
-        /* 全屏容器 */
+        :root { --primary: #00f3ff; --bg: #05070a; }
+        body { margin: 0; overflow: hidden; background: var(--bg); font-family: monospace; user-select: none; }
+        
+        /* 3D 容器 */
         #canvas-container { position: absolute; width: 100vw; height: 100vh; z-index: 1; }
 
         /* UI 层 */
         #ui-layer {
             position: absolute; z-index: 10; width: 100%; height: 100%; pointer-events: none;
-            display: flex; flex-direction: column; padding: 20px; box-sizing: border-box;
+            display: flex; justify-content: space-between; padding: 20px; box-sizing: border-box;
         }
 
-        header { text-align: center; pointer-events: auto; text-shadow: 0 0 15px var(--primary); margin-bottom: 20px; }
-        h1 { color: #fff; margin: 0; font-size: 2.5rem; letter-spacing: 5px; }
-        .subtitle { color: var(--primary); font-size: 0.9rem; opacity: 0.9; }
-
-        /* 布局 */
-        .layout { display: flex; justify-content: space-between; align-items: flex-start; }
-
-        /* 面板 */
-        .panel {
-            background: var(--glass); backdrop-filter: blur(12px);
-            border: 1px solid var(--border); border-radius: 12px; padding: 20px;
-            width: 280px; pointer-events: auto; color: #fff;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        /* 调试面板 */
+        .debug-panel {
+            background: rgba(0, 0, 0, 0.8); border: 1px solid var(--primary); color: #fff;
+            padding: 15px; border-radius: 8px; width: 300px; pointer-events: auto;
         }
-        .panel-title { 
-            border-bottom: 1px solid var(--primary); padding-bottom: 10px; margin-bottom: 15px; 
-            font-weight: bold; color: var(--primary); letter-spacing: 1px;
+        .debug-row { display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 12px; }
+        .val { color: var(--primary); font-weight: bold; }
+        .cam-preview {
+            width: 100%; height: 200px; background: #222; margin-bottom: 10px; position: relative;
+            transform: scaleX(-1); /* 镜像 */
         }
-
-        /* 摄像头预览区 */
-        .cam-container {
-            position: relative; width: 100%; height: 200px; background: #000; 
-            border-radius: 8px; overflow: hidden; border: 1px solid #333; margin-bottom: 10px;
-        }
-        #webcam, #output_canvas { 
-            position: absolute; top:0; left:0; width:100%; height:100%; 
-            transform: scaleX(-1); object-fit: cover; 
-        }
-        #webcam { opacity: 0.5; } /* 让位于 Canvas 绘制的骨骼 */
-
-        .status-item { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #ccc; }
-        .val { color: var(--primary); font-weight: bold; font-family: monospace; }
-
-        /* 手势列表 */
-        .gesture-list div { font-size: 13px; margin-bottom: 8px; border-bottom: 1px dashed rgba(255,255,255,0.1); padding-bottom: 4px; }
-
-        /* 按钮 */
-        button {
-            width: 100%; padding: 12px; background: rgba(0, 243, 255, 0.15);
-            border: 1px solid var(--primary); color: var(--primary); font-weight: bold;
-            cursor: pointer; border-radius: 6px; transition: 0.3s; margin-top: 10px;
-        }
-        button:hover { background: var(--primary); color: #000; box-shadow: 0 0 15px var(--primary); }
-        button:disabled { border-color: #555; color: #555; cursor: not-allowed; background: transparent; box-shadow: none;}
-
-        /* Loading */
-        #loading-screen {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(5, 7, 10, 0.95); z-index: 999;
-            display: flex; flex-direction: column; justify-content: center; align-items: center;
-            color: var(--primary); transition: opacity 0.5s;
-        }
-        .loader {
-            width: 50px; height: 50px; border: 4px solid #333; border-top: 4px solid var(--primary);
-            border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;
-        }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #webcam, #output_canvas { position: absolute; top:0; left:0; width:100%; height:100%; object-fit: cover; }
 
         /* Toast */
         #toast {
-            position: fixed; top: 100px; left: 50%; transform: translateX(-50%);
-            background: rgba(0, 243, 255, 0.2); border: 1px solid var(--primary);
-            color: #fff; padding: 10px 30px; border-radius: 30px;
-            font-weight: bold; opacity: 0; transition: opacity 0.3s;
-            box-shadow: 0 0 20px rgba(0, 243, 255, 0.3); pointer-events: none;
+            position: fixed; top: 10%; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 243, 255, 0.2); border: 1px solid var(--primary); color: #fff;
+            padding: 10px 30px; border-radius: 20px; font-weight: bold; opacity: 0; transition: 0.3s;
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.5); z-index: 100;
+        }
+
+        /* Loading */
+        #loading {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #000;
+            display: flex; justify-content: center; align-items: center; color: var(--primary); z-index: 999;
+            flex-direction: column;
         }
     </style>
 </head>
 <body>
 
-    <!-- 加载遮罩 -->
-    <div id="loading-screen">
-        <div class="loader"></div>
-        <h2 id="loading-text">正在初始化 AI 视觉引擎...</h2>
-        <div style="font-size: 0.9rem; color: #888; margin-top: 10px;">请确保使用 https 或 localhost (Live Server) 运行</div>
+    <div id="loading">
+        <h2>正在加载视觉模型...</h2>
+        <p>请确保使用 Live Server (localhost) 运行</p>
     </div>
 
-    <div id="toast">提示信息</div>
+    <div id="toast">提示</div>
     <div id="canvas-container"></div>
 
     <div id="ui-layer">
-        <header>
-            <h1>小灰编程</h1>
-            <div class="subtitle">MediaPipe 实时骨骼追踪系统</div>
-        </header>
-
-        <div class="layout">
-            <!-- 左侧：视觉面板 -->
-            <div class="panel">
-                <div class="panel-title">视觉传感器 (Vision Core)</div>
-                <div class="cam-container">
-                    <video id="webcam" autoplay playsinline muted></video>
-                    <canvas id="output_canvas"></canvas>
-                </div>
-                
-                <div class="status-item"><span>输入源:</span> <span class="val" id="st-input">MOUSE</span></div>
-                <div class="status-item"><span>手势状态:</span> <span class="val" id="st-gesture">WAITING</span></div>
-                <div class="status-item"><span>FPS:</span> <span class="val" id="st-fps">0</span></div>
-                
-                <button id="btn-cam" disabled>开启摄像头</button>
+        <!-- 左侧：视觉数据 -->
+        <div class="debug-panel">
+            <h3 style="color:var(--primary); margin-top:0; border-bottom:1px solid #555; padding-bottom:5px;">骨骼数据分析 (Skeleton Analysis)</h3>
+            <div class="cam-preview">
+                <video id="webcam" autoplay playsinline muted></video>
+                <canvas id="output_canvas"></canvas>
             </div>
+            
+            <div class="debug-row"><span>状态 (Action):</span> <span class="val" id="d-action">IDLE</span></div>
+            <div class="debug-row"><span>捏合距离 (Pinch):</span> <span class="val" id="d-pinch">0.00</span></div>
+            <div class="debug-row"><span>张开程度 (Open):</span> <span class="val" id="d-open">0.00</span></div>
+            <div class="debug-row"><span>挥手速度 (Swipe Y):</span> <span class="val" id="d-swipe">0.00</span></div>
+            
+            <button onclick="startCam()" style="width:100%; margin-top:10px; padding:8px; background:var(--primary); border:none; font-weight:bold; cursor:pointer;">启动摄像头</button>
+        </div>
 
-            <!-- 右侧：指令 -->
-            <div class="panel">
-                <div class="panel-title">手势指令库</div>
-                <div class="gesture-list">
-                    <div>🖱️ <b>鼠标控制</b>: 无手时自动接管</div>
-                    <div>👌 <b>捏合 (Pinch)</b>: 旋转模型 (带磁吸)</div>
-                    <div>🖐 <b>张开 (Open)</b>: 粒子炸裂散开</div>
-                    <div>👇 <b>下挥 (Down)</b>: 重力崩塌</div>
-                    <div>👆 <b>上挥 (Up)</b>: 聚合重组</div>
-                    <div>👍 <b>大拇指 (Thumb)</b>: 编译成功特效</div>
-                    <div>✊ <b>握拳 (Fist)</b>: 暂停/冻结</div>
-                </div>
+        <!-- 右侧：说明 -->
+        <div class="debug-panel" style="text-align: right;">
+            <h3 style="color:var(--primary); margin-top:0;">交互逻辑</h3>
+            <div style="font-size:12px; line-height:1.8;">
+                👌 <b>捏合</b>: 距离 < 0.06 -> 旋转<br>
+                🖐 <b>张开</b>: 平均指距 > 0.35 -> 炸裂<br>
+                👇 <b>下挥</b>: 腕部速度Y > 0.3 -> 崩塌<br>
+                👆 <b>上挥</b>: 腕部速度Y < -0.3 -> 重组<br>
+                ✊ <b>握拳</b>: 平均指距 < 0.18 -> 暂停<br>
             </div>
         </div>
     </div>
@@ -149,54 +94,35 @@
     <script type="module">
         import { FilesetResolver, GestureRecognizer, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 
-        /* ==================== 全局状态 ==================== */
-        const config = {
-            colors: [0x00f3ff, 0xbd00ff, 0x00ff9d, 0xffaa00],
-            colorIdx: 0,
-            thresholds: {
-                pinchEnter: 0.05,
-                pinchExit: 0.10,
-                open: 0.32,
-                fist: 0.18
-            }
-        };
-
+        /* ==================== 1. 全局配置 ==================== */
         const state = {
-            mode: 'MOUSE', // MOUSE | HAND
-            action: 'NORMAL', // NORMAL | SHATTER | FALLING | PAUSED
+            action: 'NORMAL', // NORMAL, SHATTER, FALLING, PAUSED
             isPinching: false,
             pinchStart: {x:0, y:0},
             targetRot: {x:0, y:0},
-            mouse: {x:0, y:0},
+            wristHistory: [],
             lockTimer: 0
         };
 
         const dom = {
             video: document.getElementById('webcam'),
             canvas: document.getElementById('output_canvas'),
-            btnCam: document.getElementById('btn-cam'),
-            loading: document.getElementById('loading-screen'),
-            loadingText: document.getElementById('loading-text'),
-            stInput: document.getElementById('st-input'),
-            stGesture: document.getElementById('st-gesture'),
-            stFps: document.getElementById('st-fps'),
+            loading: document.getElementById('loading'),
+            dPinch: document.getElementById('d-pinch'),
+            dOpen: document.getElementById('d-open'),
+            dSwipe: document.getElementById('d-swipe'),
+            dAction: document.getElementById('d-action'),
             toast: document.getElementById('toast')
         };
 
+        /* ==================== 2. AI 视觉引擎 (骨骼数据源) ==================== */
         let gestureRecognizer;
         let runningMode = "VIDEO";
         let lastVideoTime = -1;
-        let lastFrameTime = 0;
 
-        /* ==================== 1. AI 引擎初始化 (核心修复) ==================== */
         async function initVision() {
             try {
-                // 1. 加载 WASM 资源 (明确指定路径，解决跨域/路径错误)
-                const vision = await FilesetResolver.forVisionTasks(
-                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
-                );
-
-                // 2. 创建手势识别器
+                const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
                 gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
                     baseOptions: {
                         modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
@@ -205,104 +131,215 @@
                     runningMode: runningMode,
                     numHands: 1
                 });
-
-                // 3. 准备就绪
-                dom.loading.style.opacity = 0;
-                setTimeout(() => dom.loading.style.display = 'none', 500);
-                dom.btnCam.disabled = false;
-                dom.btnCam.innerText = "开启摄像头 (AI Ready)";
-                
-            } catch (err) {
-                dom.loadingText.innerText = "初始化失败: " + err.message;
-                dom.loadingText.style.color = "#ff4757";
-                console.error(err);
-                alert("AI 模型加载失败。请确保您使用本地服务器 (Live Server) 运行此文件，而非直接双击打开。");
+                dom.loading.style.display = 'none';
+            } catch (e) {
+                alert("模型加载失败，请检查网络或使用 localhost 运行。");
             }
         }
 
-        /* ==================== 2. Three.js 粒子系统 ==================== */
+        window.startCam = () => {
+            navigator.mediaDevices.getUserMedia({video: true}).then(stream => {
+                dom.video.srcObject = stream;
+                dom.video.addEventListener('loadeddata', predictWebcam);
+            });
+        };
+
+        const drawingUtils = new DrawingUtils(dom.canvas.getContext("2d"));
+
+        async function predictWebcam() {
+            if(dom.video.currentTime !== lastVideoTime) {
+                lastVideoTime = dom.video.currentTime;
+                const results = gestureRecognizer.recognizeForVideo(dom.video, Date.now());
+                
+                // 绘制骨架
+                drawSkeleton(results);
+                
+                // 核心：基于骨骼的自定义逻辑
+                if(results.landmarks.length > 0) {
+                    analyzeSkeleton(results.landmarks[0]);
+                }
+            }
+            requestAnimationFrame(predictWebcam);
+        }
+
+        function drawSkeleton(results) {
+            const ctx = dom.canvas.getContext("2d");
+            ctx.clearRect(0,0, dom.canvas.width, dom.canvas.height);
+            dom.canvas.width = dom.video.videoWidth;
+            dom.canvas.height = dom.video.videoHeight;
+            if(results.landmarks && results.landmarks[0]) {
+                drawingUtils.drawConnectors(results.landmarks[0], GestureRecognizer.HAND_CONNECTIONS, {color: "#00f3ff", lineWidth: 2});
+                drawingUtils.drawLandmarks(results.landmarks[0], {color: "#fff", radius: 2});
+            }
+        }
+
+        /* ==================== 3. 核心：骨骼几何算法 (The Logic) ==================== */
+        function analyzeSkeleton(lm) {
+            if(state.lockTimer > 0) { state.lockTimer--; return; }
+
+            // 1. 提取关键点 (Data extraction)
+            const thumb = lm[4];
+            const index = lm[8];
+            const wrist = lm[0];
+            
+            // 2. 计算几何特征 (Geometry Calculation)
+            
+            // A. 捏合距离 (欧几里得距离 3D)
+            const pinchDist = Math.hypot(thumb.x - index.x, thumb.y - index.y, thumb.z - index.z);
+            
+            // B. 张开程度 (指尖到手腕的平均距离)
+            const tips = [4, 8, 12, 16, 20];
+            let totalDist = 0;
+            tips.forEach(i => totalDist += Math.hypot(lm[i].x - wrist.x, lm[i].y - wrist.y));
+            const avgOpen = totalDist / 5;
+
+            // C. 挥手速度 (基于历史位置)
+            state.wristHistory.push({x: wrist.x, y: wrist.y, t: Date.now()});
+            if(state.wristHistory.length > 6) state.wristHistory.shift();
+            
+            let swipeDy = 0, swipeDx = 0;
+            if(state.wristHistory.length === 6) {
+                const start = state.wristHistory[0];
+                const end = state.wristHistory[5];
+                swipeDy = (end.y - start.y) * 10; // 放大系数
+                swipeDx = (end.x - start.x) * 10;
+            }
+
+            // 更新调试面板
+            dom.dPinch.innerText = pinchDist.toFixed(3);
+            dom.dOpen.innerText = avgOpen.toFixed(3);
+            dom.dSwipe.innerText = swipeDy.toFixed(3);
+
+            // 3. 状态机判断 (State Machine)
+
+            // --- 优先级 1: 暂停 (握拳) ---
+            if(avgOpen < 0.18) {
+                if(state.action !== 'PAUSED') {
+                    state.action = 'PAUSED';
+                    showToast("✊ 已冻结 (Paused)");
+                } else {
+                    state.action = 'NORMAL';
+                    showToast("✊ 已恢复 (Resumed)");
+                }
+                state.lockTimer = 30; // 冷却防止闪烁
+                dom.dAction.innerText = "FIST (PAUSE)";
+                return;
+            }
+            if(state.action === 'PAUSED') return;
+
+            // --- 优先级 2: 捏合旋转 ---
+            const pinchEnter = 0.06;
+            const pinchExit = 0.10; // 磁吸防抖
+            const threshold = state.isPinching ? pinchExit : pinchEnter;
+
+            if(pinchDist < threshold) {
+                if(!state.isPinching) {
+                    state.isPinching = true;
+                    state.pinchStart = {x: thumb.x, y: thumb.y};
+                }
+                // 计算旋转 Delta
+                const dx = (thumb.x - state.pinchStart.x) * 5;
+                const dy = (thumb.y - state.pinchStart.y) * 5;
+                state.targetRot.y -= dx * 0.1;
+                state.targetRot.x += dy * 0.1;
+                
+                dom.dAction.innerText = "👌 PINCH ROTATE";
+                return; // 捏合时阻断其他手势
+            } else {
+                state.isPinching = false;
+            }
+
+            // --- 优先级 3: 挥手 (Swipe) ---
+            if(Math.abs(swipeDy) > 0.8) { // 阈值
+                if(swipeDy > 0) { // Y向下增加
+                    state.action = 'FALLING';
+                    dom.dAction.innerText = "👇 SWIPE DOWN";
+                    showToast("👇 崩塌 (Collapse)");
+                    resetVelocity();
+                } else {
+                    state.action = 'NORMAL';
+                    dom.dAction.innerText = "👆 SWIPE UP";
+                    showToast("👆 重组 (Reassemble)");
+                }
+                state.lockTimer = 20;
+                return;
+            }
+            
+            if(Math.abs(swipeDx) > 0.8) {
+                changeTheme();
+                state.lockTimer = 20;
+                showToast("↔️ 换色 (Theme)");
+                return;
+            }
+
+            // --- 优先级 4: 张开炸裂 ---
+            if(avgOpen > 0.35) {
+                state.action = 'SHATTER';
+                dom.dAction.innerText = "🖐 OPEN (SHATTER)";
+            } else if(state.action === 'SHATTER') {
+                state.action = 'NORMAL'; // 自动恢复
+            } else {
+                dom.dAction.innerText = "IDLE";
+            }
+        }
+
+        /* ==================== 4. Three.js 粒子特效 ==================== */
         let scene, camera, renderer, particles, originalPos, velocities, explosionDirs;
+        let themes = [0x00f3ff, 0xff0055, 0xccff00, 0xbd00ff];
+        let themeIdx = 0;
 
         function initThree() {
-            const container = document.getElementById('canvas-container');
             scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0x05070a, 0.0015);
-
-            camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 1000);
+            camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 1, 1000);
             camera.position.z = 160;
 
-            renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+            renderer = new THREE.WebGLRenderer({alpha:true, antialias:true});
             renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            container.appendChild(renderer.domElement);
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
 
-            // 生成文字
             createParticles();
-
-            // 事件
-            window.addEventListener('resize', onResize);
-            document.addEventListener('mousemove', onMouseMove);
-            
             animate();
         }
 
         function createParticles() {
-            const w = 1024, h = 256;
             const cvs = document.createElement('canvas');
-            cvs.width = w; cvs.height = h;
+            cvs.width = 1024; cvs.height = 256;
             const ctx = cvs.getContext('2d');
-            
-            ctx.fillStyle = '#000'; ctx.fillRect(0,0,w,h);
-            ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.font = 'bold 150px "Microsoft YaHei", sans-serif';
-            ctx.fillText("小灰编程", w/2, h/2);
+            ctx.fillStyle = '#000'; ctx.fillRect(0,0,1024,256);
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 150px monospace';
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            ctx.fillText("小灰编程", 512, 128);
 
-            const data = ctx.getImageData(0,0,w,h).data;
+            const data = ctx.getImageData(0,0,1024,256).data;
             const points = [];
-            const stride = 3; // 密度控制
-
-            for(let y=0; y<h; y+=stride) {
-                for(let x=0; x<w; x+=stride) {
-                    if(data[(y*w+x)*4] > 128) {
-                        points.push((x-w/2)*0.4, -(y-h/2)*0.4, 0);
+            
+            for(let y=0; y<256; y+=3) {
+                for(let x=0; x<1024; x+=3) {
+                    if(data[(y*1024+x)*4] > 128) {
+                        points.push((x-512)*0.4, -(y-128)*0.4, 0);
                     }
                 }
             }
 
             const geo = new THREE.BufferGeometry();
-            const posAttr = new THREE.Float32BufferAttribute(points, 3);
-            geo.setAttribute('position', posAttr);
-            
-            originalPos = posAttr.clone();
+            geo.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
+            originalPos = geo.attributes.position.clone();
             velocities = new Float32Array(points.length);
             explosionDirs = new Float32Array(points.length);
 
-            // 预计算爆炸方向
+            // 预计算爆炸
             for(let i=0; i<points.length; i+=3) {
-                const px=points[i], py=points[i+1];
-                const len = Math.sqrt(px*px + py*py) + 0.1;
-                explosionDirs[i] = px/len + (Math.random()-0.5);
-                explosionDirs[i+1] = py/len + (Math.random()-0.5);
+                const x=points[i], y=points[i+1];
+                const len = Math.sqrt(x*x+y*y)+0.1;
+                explosionDirs[i] = x/len + (Math.random()-0.5);
+                explosionDirs[i+1] = y/len + (Math.random()-0.5);
                 explosionDirs[i+2] = (Math.random()-0.5)*2;
             }
 
-            const mat = new THREE.PointsMaterial({
-                color: config.colors[0],
-                size: 0.9,
-                transparent: true, opacity: 0.9,
-                blending: THREE.AdditiveBlending
-            });
-
-            particles = new THREE.Points(geo, mat);
+            particles = new THREE.Points(geo, new THREE.PointsMaterial({
+                color: themes[0], size: 1.0, transparent: true, opacity: 0.9
+            }));
             scene.add(particles);
-        }
-
-        /* ==================== 3. 逻辑循环 ==================== */
-        function onMouseMove(e) {
-            if(state.mode === 'MOUSE') {
-                state.mouse.x = (e.clientX - window.innerWidth/2) * 0.0005;
-                state.mouse.y = (e.clientY - window.innerHeight/2) * 0.0005;
-            }
         }
 
         function updatePhysics() {
@@ -311,242 +348,60 @@
             const pos = particles.geometry.attributes.position.array;
             const orig = originalPos.array;
 
-            // 1. 旋转控制
-            let tx, ty;
-            if(state.mode === 'MOUSE') {
-                tx = state.mouse.y; ty = state.mouse.x;
-            } else {
-                tx = state.targetRot.x; ty = state.targetRot.y;
-            }
-            // 惯性平滑
-            particles.rotation.x += (tx - particles.rotation.x) * 0.1;
-            particles.rotation.y += (ty - particles.rotation.y) * 0.1;
+            // 旋转平滑
+            particles.rotation.x += (state.targetRot.x - particles.rotation.x) * 0.1;
+            particles.rotation.y += (state.targetRot.y - particles.rotation.y) * 0.1;
 
-            // 2. 粒子行为
             for(let i=0; i<pos.length; i+=3) {
                 if(state.action === 'SHATTER') {
-                    // 炸裂
-                    const f = 25; // 力度
-                    pos[i] += (orig[i] + explosionDirs[i]*f - pos[i]) * 0.1;
-                    pos[i+1] += (orig[i+1] + explosionDirs[i+1]*f - pos[i+1]) * 0.1;
-                    pos[i+2] += (orig[i+2] + explosionDirs[i+2]*f - pos[i+2]) * 0.1;
-                }
-                else if(state.action === 'FALLING') {
-                    // 下落
+                    // 炸裂逻辑
+                    pos[i] += (orig[i] + explosionDirs[i]*30 - pos[i]) * 0.1;
+                    pos[i+1] += (orig[i+1] + explosionDirs[i+1]*30 - pos[i+1]) * 0.1;
+                    pos[i+2] += (orig[i+2] + explosionDirs[i+2]*30 - pos[i+2]) * 0.1;
+                } 
+                else if (state.action === 'FALLING') {
+                    // 崩塌逻辑
                     velocities[i+1] -= 0.05; // 重力
                     velocities[i] += (Math.random()-0.5)*0.1;
                     pos[i] += velocities[i];
                     pos[i+1] += velocities[i+1];
                     pos[i+2] += velocities[i+2];
-
-                    if(pos[i+1] < -120) {
-                         pos[i+1] = -120; velocities[i+1] *= -0.5; 
-                    }
-                }
+                    if(pos[i+1] < -120) { pos[i+1]=-120; velocities[i+1]*=-0.5; }
+                } 
                 else {
-                    // 聚合 (NORMAL)
-                    pos[i] += (orig[i] - pos[i]) * 0.12;
-                    pos[i+1] += (orig[i+1] - pos[i+1]) * 0.12;
-                    pos[i+2] += (orig[i+2] - pos[i+2]) * 0.12;
+                    // 聚合逻辑
+                    pos[i] += (orig[i] - pos[i]) * 0.15;
+                    pos[i+1] += (orig[i+1] - pos[i+1]) * 0.15;
+                    pos[i+2] += (orig[i+2] - pos[i+2]) * 0.15;
                 }
             }
             particles.geometry.attributes.position.needsUpdate = true;
         }
 
-        function onResize() {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+        function resetVelocity() {
+            for(let i=0; i<velocities.length; i++) velocities[i] = (Math.random()-0.5);
         }
 
-        function animate(time) {
-            requestAnimationFrame(animate);
-            updatePhysics();
-            renderer.render(scene, camera);
-            
-            // FPS 计算
-            if(time - lastFrameTime > 1000) {
-                dom.stFps.innerText = Math.round(1000 / (time - lastFrameTime) * 60); // 粗略估算
-                lastFrameTime = time;
-            }
+        function changeTheme() {
+            themeIdx = (themeIdx+1)%themes.length;
+            particles.material.color.setHex(themes[themeIdx]);
         }
-
-        /* ==================== 4. MediaPipe 实时预测 ==================== */
-        const drawingUtils = new DrawingUtils(dom.canvas.getContext("2d"));
-        let wristHistory = [];
-
-        async function predictLoop() {
-            if(!dom.video.videoWidth) { requestAnimationFrame(predictLoop); return; }
-
-            const now = Date.now();
-            if(dom.video.currentTime !== lastVideoTime) {
-                lastVideoTime = dom.video.currentTime;
-                const results = gestureRecognizer.recognizeForVideo(dom.video, now);
-
-                drawSkeleton(results);
-                processGestureLogic(results);
-            }
-            requestAnimationFrame(predictLoop);
-        }
-
-        function drawSkeleton(results) {
-            const ctx = dom.canvas.getContext("2d");
-            ctx.clearRect(0,0, dom.canvas.width, dom.canvas.height);
-            dom.canvas.width = dom.video.videoWidth;
-            dom.canvas.height = dom.video.videoHeight;
-
-            if(results.landmarks && results.landmarks.length > 0) {
-                const lm = results.landmarks[0];
-                drawingUtils.drawConnectors(lm, GestureRecognizer.HAND_CONNECTIONS, {color: "#00f3ff", lineWidth: 3});
-                drawingUtils.drawLandmarks(lm, {color: "#ffffff", lineWidth: 1, radius: 3});
-            }
-        }
-
-        function processGestureLogic(results) {
-            // 1. 模式切换
-            if(!results.landmarks || results.landmarks.length === 0) {
-                if(state.mode !== 'MOUSE') {
-                    state.mode = 'MOUSE';
-                    dom.stInput.innerText = 'MOUSE (No Hand)';
-                    dom.stInput.style.color = '#ccc';
-                }
-                return;
-            }
-
-            state.mode = 'HAND';
-            dom.stInput.innerText = 'HAND TRACKING';
-            dom.stInput.style.color = '#00f3ff';
-
-            if(state.lockTimer > 0) { state.lockTimer--; return; }
-
-            // 2. 数据准备
-            const lm = results.landmarks[0];
-            const thumb = lm[4], index = lm[8], wrist = lm[0];
-
-            // 3D 距离计算
-            const dist = (p1, p2) => Math.hypot(p1.x-p2.x, p1.y-p2.y, p1.z-p2.z);
-            
-            const pinchDist = dist(thumb, index);
-            
-            // 平均张开度
-            let openSum = 0;
-            [4,8,12,16,20].forEach(i => openSum += dist(lm[i], wrist));
-            const avgOpen = openSum / 5;
-
-            // 3. 核心状态机
-
-            // A. 握拳 (优先判定)
-            if(avgOpen < config.thresholds.fist) {
-                if(state.action !== 'PAUSED') {
-                    state.action = 'PAUSED';
-                    showToast("✊ 已冻结 Paused");
-                } else {
-                    state.action = 'NORMAL';
-                    showToast("✊ 已恢复 Resumed");
-                }
-                state.lockTimer = 30; // 冷却
-                dom.stGesture.innerText = 'FIST';
-                return;
-            }
-            if(state.action === 'PAUSED') return;
-
-            // B. 捏合旋转
-            let pTrigger = state.isPinching ? config.thresholds.pinchExit : config.thresholds.pinchEnter;
-            if(pinchDist < pTrigger) {
-                if(!state.isPinching) {
-                    state.isPinching = true;
-                    state.pinchStart = {x: thumb.x, y: thumb.y};
-                }
-                // 映射旋转
-                const dx = (thumb.x - state.pinchStart.x) * 4;
-                const dy = (thumb.y - state.pinchStart.y) * 4;
-                state.targetRot.y -= dx * 0.1;
-                state.targetRot.x += dy * 0.1;
-                
-                dom.stGesture.innerText = 'PINCH ROTATE';
-                return;
-            } else {
-                state.isPinching = false;
-            }
-
-            // C. 挥手检测 (History based)
-            wristHistory.push({x: wrist.x, y: wrist.y, t: Date.now()});
-            if(wristHistory.length > 8) wristHistory.shift();
-
-            if(wristHistory.length === 8) {
-                const start = wristHistory[0], end = wristHistory[7];
-                const dy = end.y - start.y;
-                const dx = end.x - start.x;
-
-                // MediaPipe Y坐标向下为正: dy > 0 是向下
-                if(dy > 0.15) {
-                    state.action = 'FALLING';
-                    // 重置速度
-                    for(let i=0; i<velocities.length; i++) velocities[i] = (Math.random()-0.5);
-                    dom.stGesture.innerText = 'SWIPE DOWN';
-                    showToast("👇 重力崩塌");
-                    state.lockTimer = 20;
-                    return;
-                }
-                if(dy < -0.15) {
-                    state.action = 'NORMAL';
-                    dom.stGesture.innerText = 'SWIPE UP';
-                    showToast("👆 聚合重组");
-                    state.lockTimer = 20;
-                    return;
-                }
-            }
-
-            // D. 张手炸裂
-            if(avgOpen > config.thresholds.open) {
-                state.action = 'SHATTER';
-                dom.stGesture.innerText = 'OPEN SHATTER';
-            } else if (state.action === 'SHATTER') {
-                state.action = 'NORMAL'; // 自动回弹
-            } else {
-                dom.stGesture.innerText = 'TRACKING';
-            }
-
-            // E. 大拇指点赞 (Thumb Up)
-            // 拇指尖在最上方，且其他四指卷曲
-            const isThumbUp = thumb.y < lm[3].y; // y小为上
-            const othersCurled = lm[12].y > lm[10].y && lm[16].y > lm[14].y;
-            
-            if(isThumbUp && othersCurled && !state.isPinching) {
-                showToast("👍 编译成功!");
-                particles.material.color.setHex(0x00ff00);
-                setTimeout(() => particles.material.color.setHex(config.colors[config.colorIdx]), 800);
-                state.lockTimer = 40;
-                dom.stGesture.innerText = 'THUMB UP';
-            }
-        }
-
-        /* ==================== 5. 交互绑定 ==================== */
-        dom.btnCam.addEventListener('click', () => {
-            dom.btnCam.innerText = "正在启动...";
-            navigator.mediaDevices.getUserMedia({video: true}).then(stream => {
-                dom.video.srcObject = stream;
-                dom.video.addEventListener('loadeddata', predictLoop);
-                dom.btnCam.innerText = "摄像头运行中";
-            }).catch(err => {
-                alert("摄像头访问被拒绝");
-                dom.btnCam.innerText = "启动失败";
-            });
-        });
 
         function showToast(msg) {
             dom.toast.innerText = msg;
             dom.toast.style.opacity = 1;
-            dom.toast.style.top = '120px';
-            setTimeout(() => {
-                dom.toast.style.opacity = 0;
-                dom.toast.style.top = '100px';
-            }, 1500);
+            setTimeout(()=>dom.toast.style.opacity=0, 2000);
         }
 
-        // 启动流程
+        function animate() {
+            requestAnimationFrame(animate);
+            updatePhysics();
+            renderer.render(scene, camera);
+        }
+
+        // 启动
+        initVision();
         initThree();
-        initVision(); // 异步加载 AI
 
     </script>
 </body>
