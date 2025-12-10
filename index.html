@@ -3,24 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>小灰编程 · 双模交互核心 (Mouse + AI Vision)</title>
+    <title>小灰编程 · MediaPipe 骨骼追踪修复版</title>
     
-    <!-- 引入 Three.js -->
+    <!-- Three.js -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <!-- 引入 MediaPipe Vision -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
-
+    
     <style>
         :root {
             --primary: #00f3ff;
             --bg: #05070a;
-            --glass: rgba(20, 30, 40, 0.7);
-            --border: rgba(255, 255, 255, 0.15);
+            --glass: rgba(20, 30, 40, 0.8);
+            --border: rgba(255, 255, 255, 0.2);
         }
 
-        body { margin: 0; overflow: hidden; background: var(--bg); font-family: 'Microsoft YaHei', sans-serif; user-select: none; }
+        body { margin: 0; overflow: hidden; background: var(--bg); font-family: 'Segoe UI', sans-serif; user-select: none; }
 
-        /* 3D 容器 */
+        /* 全屏容器 */
         #canvas-container { position: absolute; width: 100vw; height: 100vh; z-index: 1; }
 
         /* UI 层 */
@@ -29,185 +27,223 @@
             display: flex; flex-direction: column; padding: 20px; box-sizing: border-box;
         }
 
-        /* 顶部标题 */
-        header { text-align: center; pointer-events: auto; text-shadow: 0 0 10px var(--primary); }
-        h1 { color: #fff; margin: 0; font-size: 2rem; letter-spacing: 4px; }
-        .subtitle { color: var(--primary); font-size: 0.9rem; opacity: 0.8; }
+        header { text-align: center; pointer-events: auto; text-shadow: 0 0 15px var(--primary); margin-bottom: 20px; }
+        h1 { color: #fff; margin: 0; font-size: 2.5rem; letter-spacing: 5px; }
+        .subtitle { color: var(--primary); font-size: 0.9rem; opacity: 0.9; }
 
-        /* 主布局 */
-        .layout { display: flex; flex: 1; justify-content: space-between; align-items: flex-start; margin-top: 20px; }
+        /* 布局 */
+        .layout { display: flex; justify-content: space-between; align-items: flex-start; }
 
-        /* 面板通用 */
+        /* 面板 */
         .panel {
-            background: var(--glass); backdrop-filter: blur(10px);
-            border: 1px solid var(--border); border-radius: 12px; padding: 15px;
-            width: 260px; pointer-events: auto; color: #fff; transition: border 0.3s;
+            background: var(--glass); backdrop-filter: blur(12px);
+            border: 1px solid var(--border); border-radius: 12px; padding: 20px;
+            width: 280px; pointer-events: auto; color: #fff;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
-        .panel:hover { border-color: var(--primary); }
-        .panel-title { border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 10px; font-weight: bold; color: var(--primary); }
-
-        /* 左侧摄像头预览 */
-        .cam-box {
-            width: 100%; height: 180px; background: #000; border-radius: 8px; overflow: hidden; position: relative; border: 1px solid #333;
+        .panel-title { 
+            border-bottom: 1px solid var(--primary); padding-bottom: 10px; margin-bottom: 15px; 
+            font-weight: bold; color: var(--primary); letter-spacing: 1px;
         }
-        #webcam, #output_canvas { position: absolute; top:0; left:0; width:100%; height:100%; transform: scaleX(-1); object-fit: cover; }
-        
-        .status-row { display: flex; justify-content: space-between; font-size: 12px; margin-top: 5px; color: #aaa; }
-        .val { color: var(--primary); font-weight: bold; }
 
-        /* 右侧手势表 */
-        .gesture-list div { font-size: 12px; margin-bottom: 5px; border-bottom: 1px dashed rgba(255,255,255,0.1); padding-bottom: 2px; }
-
-        /* Toast 提示 */
-        #toast {
-            position: fixed; top: 15%; right: 50%; transform: translateX(50%);
-            background: rgba(0, 243, 255, 0.2); border: 1px solid var(--primary);
-            color: #fff; padding: 10px 20px; border-radius: 20px;
-            font-weight: bold; opacity: 0; transition: opacity 0.3s; pointer-events: none;
-            box-shadow: 0 0 20px rgba(0, 243, 255, 0.3); z-index: 100;
+        /* 摄像头预览区 */
+        .cam-container {
+            position: relative; width: 100%; height: 200px; background: #000; 
+            border-radius: 8px; overflow: hidden; border: 1px solid #333; margin-bottom: 10px;
         }
+        #webcam, #output_canvas { 
+            position: absolute; top:0; left:0; width:100%; height:100%; 
+            transform: scaleX(-1); object-fit: cover; 
+        }
+        #webcam { opacity: 0.5; } /* 让位于 Canvas 绘制的骨骼 */
+
+        .status-item { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px; color: #ccc; }
+        .val { color: var(--primary); font-weight: bold; font-family: monospace; }
+
+        /* 手势列表 */
+        .gesture-list div { font-size: 13px; margin-bottom: 8px; border-bottom: 1px dashed rgba(255,255,255,0.1); padding-bottom: 4px; }
+
+        /* 按钮 */
+        button {
+            width: 100%; padding: 12px; background: rgba(0, 243, 255, 0.15);
+            border: 1px solid var(--primary); color: var(--primary); font-weight: bold;
+            cursor: pointer; border-radius: 6px; transition: 0.3s; margin-top: 10px;
+        }
+        button:hover { background: var(--primary); color: #000; box-shadow: 0 0 15px var(--primary); }
+        button:disabled { border-color: #555; color: #555; cursor: not-allowed; background: transparent; box-shadow: none;}
 
         /* Loading */
-        #loading {
+        #loading-screen {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.9); z-index: 999;
-            display: flex; justify-content: center; align-items: center; flex-direction: column;
-            color: var(--primary); font-size: 1.5rem;
+            background: rgba(5, 7, 10, 0.95); z-index: 999;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            color: var(--primary); transition: opacity 0.5s;
         }
-        .spinner {
-            width: 40px; height: 40px; border: 4px solid #333; border-top: 4px solid var(--primary);
+        .loader {
+            width: 50px; height: 50px; border: 4px solid #333; border-top: 4px solid var(--primary);
             border-radius: 50%; animation: spin 1s linear infinite; margin-bottom: 20px;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-        button {
-            width: 100%; padding: 8px; margin-top: 10px; background: rgba(0,255,255,0.1);
-            border: 1px solid var(--primary); color: var(--primary); cursor: pointer; border-radius: 4px;
-        }
-        button:hover { background: var(--primary); color: #000; }
-
-        /* 暂停遮罩 */
-        #pause-mask {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            font-size: 5rem; color: rgba(255,255,255,0.1); font-weight: 900; display: none;
+        /* Toast */
+        #toast {
+            position: fixed; top: 100px; left: 50%; transform: translateX(-50%);
+            background: rgba(0, 243, 255, 0.2); border: 1px solid var(--primary);
+            color: #fff; padding: 10px 30px; border-radius: 30px;
+            font-weight: bold; opacity: 0; transition: opacity 0.3s;
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.3); pointer-events: none;
         }
     </style>
 </head>
 <body>
 
-    <div id="loading">
-        <div class="spinner"></div>
-        <div>正在加载 AI 视觉模型...</div>
-        <div style="font-size: 0.8rem; color: #666; margin-top: 10px;">(首次加载需约 10秒)</div>
+    <!-- 加载遮罩 -->
+    <div id="loading-screen">
+        <div class="loader"></div>
+        <h2 id="loading-text">正在初始化 AI 视觉引擎...</h2>
+        <div style="font-size: 0.9rem; color: #888; margin-top: 10px;">请确保使用 https 或 localhost (Live Server) 运行</div>
     </div>
 
     <div id="toast">提示信息</div>
-    <div id="pause-mask">PAUSED</div>
     <div id="canvas-container"></div>
 
     <div id="ui-layer">
         <header>
             <h1>小灰编程</h1>
-            <div class="subtitle">AI Vision + Mouse Dual Interaction</div>
+            <div class="subtitle">MediaPipe 实时骨骼追踪系统</div>
         </header>
 
         <div class="layout">
-            <!-- 左侧：视觉反馈 -->
+            <!-- 左侧：视觉面板 -->
             <div class="panel">
-                <div class="panel-title">视觉传感器 (Vision)</div>
-                <div class="cam-box">
+                <div class="panel-title">视觉传感器 (Vision Core)</div>
+                <div class="cam-container">
                     <video id="webcam" autoplay playsinline muted></video>
                     <canvas id="output_canvas"></canvas>
                 </div>
-                <div class="status-row"><span>Input Mode:</span> <span class="val" id="st-mode">MOUSE</span></div>
-                <div class="status-row"><span>Status:</span> <span class="val" id="st-status">IDLE</span></div>
-                <div class="status-row"><span>Pinch Dist:</span> <span class="val" id="st-pinch">0.00</span></div>
-                <button id="btn-cam">开启摄像头</button>
+                
+                <div class="status-item"><span>输入源:</span> <span class="val" id="st-input">MOUSE</span></div>
+                <div class="status-item"><span>手势状态:</span> <span class="val" id="st-gesture">WAITING</span></div>
+                <div class="status-item"><span>FPS:</span> <span class="val" id="st-fps">0</span></div>
+                
+                <button id="btn-cam" disabled>开启摄像头</button>
             </div>
 
-            <!-- 右侧：指令表 -->
+            <!-- 右侧：指令 -->
             <div class="panel">
-                <div class="panel-title">交互指令表</div>
+                <div class="panel-title">手势指令库</div>
                 <div class="gesture-list">
-                    <div>🖱️ <b>鼠标模式</b>：移动旋转，滚轮缩放</div>
-                    <div>👌 <b>捏合 (Pinch)</b>：物理旋转模型</div>
-                    <div>🖐 <b>张开 (Open)</b>：粒子炸裂散开</div>
-                    <div>👇 <b>下挥 (Swipe Down)</b>：粒子重力崩塌</div>
-                    <div>👆 <b>上挥 (Swipe Up)</b>：粒子重组复原</div>
-                    <div>↔️ <b>侧挥 (Swipe Side)</b>：切换主题色</div>
-                    <div>👍 <b>竖大拇指</b>：编译成功特效</div>
-                    <div>✊ <b>握拳 (Fist)</b>：暂停/冻结</div>
+                    <div>🖱️ <b>鼠标控制</b>: 无手时自动接管</div>
+                    <div>👌 <b>捏合 (Pinch)</b>: 旋转模型 (带磁吸)</div>
+                    <div>🖐 <b>张开 (Open)</b>: 粒子炸裂散开</div>
+                    <div>👇 <b>下挥 (Down)</b>: 重力崩塌</div>
+                    <div>👆 <b>上挥 (Up)</b>: 聚合重组</div>
+                    <div>👍 <b>大拇指 (Thumb)</b>: 编译成功特效</div>
+                    <div>✊ <b>握拳 (Fist)</b>: 暂停/冻结</div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- 模块化脚本 -->
     <script type="module">
         import { FilesetResolver, GestureRecognizer, DrawingUtils } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3";
 
-        /* ==================== 1. 全局配置 ==================== */
+        /* ==================== 全局状态 ==================== */
         const config = {
-            themes: [0x00f3ff, 0xbd00ff, 0x00ff9d, 0xffaa00],
-            currTheme: 0,
-            pinchEnter: 0.06,  // 捏合灵敏度
-            pinchExit: 0.12,   // 捏合防抖
-            openThresh: 0.28,  // 张开炸裂阈值
-            swipeSpeed: 0.015, // 挥手速度阈值
-            mouseSense: 0.0005 // 鼠标灵敏度
+            colors: [0x00f3ff, 0xbd00ff, 0x00ff9d, 0xffaa00],
+            colorIdx: 0,
+            thresholds: {
+                pinchEnter: 0.05,
+                pinchExit: 0.10,
+                open: 0.32,
+                fist: 0.18
+            }
         };
 
         const state = {
-            mode: 'MOUSE', // MOUSE or HAND
-            action: 'NORMAL', // NORMAL, SHATTER, FALLING, PAUSED
-            rotation: { x: 0, y: 0 }, // 目标旋转
-            mouse: { x: 0, y: 0 },
-            handStart: { x: 0, y: 0 }, // 捏合起始点
+            mode: 'MOUSE', // MOUSE | HAND
+            action: 'NORMAL', // NORMAL | SHATTER | FALLING | PAUSED
             isPinching: false,
-            gestureLock: 0 // 冷却时间
+            pinchStart: {x:0, y:0},
+            targetRot: {x:0, y:0},
+            mouse: {x:0, y:0},
+            lockTimer: 0
         };
 
         const dom = {
             video: document.getElementById('webcam'),
-            canvas2d: document.getElementById('output_canvas'),
-            stMode: document.getElementById('st-mode'),
-            stStatus: document.getElementById('st-status'),
-            stPinch: document.getElementById('st-pinch'),
-            toast: document.getElementById('toast'),
-            pauseMask: document.getElementById('pause-mask'),
-            loading: document.getElementById('loading')
+            canvas: document.getElementById('output_canvas'),
+            btnCam: document.getElementById('btn-cam'),
+            loading: document.getElementById('loading-screen'),
+            loadingText: document.getElementById('loading-text'),
+            stInput: document.getElementById('st-input'),
+            stGesture: document.getElementById('st-gesture'),
+            stFps: document.getElementById('st-fps'),
+            toast: document.getElementById('toast')
         };
 
+        let gestureRecognizer;
+        let runningMode = "VIDEO";
+        let lastVideoTime = -1;
+        let lastFrameTime = 0;
+
+        /* ==================== 1. AI 引擎初始化 (核心修复) ==================== */
+        async function initVision() {
+            try {
+                // 1. 加载 WASM 资源 (明确指定路径，解决跨域/路径错误)
+                const vision = await FilesetResolver.forVisionTasks(
+                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm"
+                );
+
+                // 2. 创建手势识别器
+                gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
+                        delegate: "GPU"
+                    },
+                    runningMode: runningMode,
+                    numHands: 1
+                });
+
+                // 3. 准备就绪
+                dom.loading.style.opacity = 0;
+                setTimeout(() => dom.loading.style.display = 'none', 500);
+                dom.btnCam.disabled = false;
+                dom.btnCam.innerText = "开启摄像头 (AI Ready)";
+                
+            } catch (err) {
+                dom.loadingText.innerText = "初始化失败: " + err.message;
+                dom.loadingText.style.color = "#ff4757";
+                console.error(err);
+                alert("AI 模型加载失败。请确保您使用本地服务器 (Live Server) 运行此文件，而非直接双击打开。");
+            }
+        }
+
         /* ==================== 2. Three.js 粒子系统 ==================== */
-        let scene, camera, renderer, particles;
-        let originalPos, velocities, explosionDirs; // Buffers
+        let scene, camera, renderer, particles, originalPos, velocities, explosionDirs;
 
         function initThree() {
+            const container = document.getElementById('canvas-container');
             scene = new THREE.Scene();
             scene.fog = new THREE.FogExp2(0x05070a, 0.0015);
 
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 1000);
-            camera.position.z = 150;
+            camera.position.z = 160;
 
             renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer.setSize(window.innerWidth, window.innerHeight);
             renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-            document.getElementById('canvas-container').appendChild(renderer.domElement);
+            container.appendChild(renderer.domElement);
 
+            // 生成文字
             createParticles();
 
-            // 鼠标监听
-            document.addEventListener('mousemove', (e) => {
-                if(state.mode === 'MOUSE') {
-                    state.mouse.x = (e.clientX - window.innerWidth/2) * config.mouseSense;
-                    state.mouse.y = (e.clientY - window.innerHeight/2) * config.mouseSense;
-                }
-            });
-
-            window.addEventListener('resize', () => {
-                camera.aspect = window.innerWidth / window.innerHeight;
-                camera.updateProjectionMatrix();
-                renderer.setSize(window.innerWidth, window.innerHeight);
-            });
+            // 事件
+            window.addEventListener('resize', onResize);
+            document.addEventListener('mousemove', onMouseMove);
+            
+            animate();
         }
 
         function createParticles() {
@@ -218,12 +254,12 @@
             
             ctx.fillStyle = '#000'; ctx.fillRect(0,0,w,h);
             ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            ctx.font = 'bold 160px "Microsoft YaHei", sans-serif';
+            ctx.font = 'bold 150px "Microsoft YaHei", sans-serif';
             ctx.fillText("小灰编程", w/2, h/2);
 
             const data = ctx.getImageData(0,0,w,h).data;
             const points = [];
-            const stride = 2; // 采样密度
+            const stride = 3; // 密度控制
 
             for(let y=0; y<h; y+=stride) {
                 for(let x=0; x<w; x+=stride) {
@@ -241,18 +277,18 @@
             velocities = new Float32Array(points.length);
             explosionDirs = new Float32Array(points.length);
 
-            // 预计算爆炸向量
+            // 预计算爆炸方向
             for(let i=0; i<points.length; i+=3) {
-                const x = points[i], y = points[i+1];
-                const len = Math.sqrt(x*x + y*y) + 0.01;
-                explosionDirs[i] = x/len + (Math.random()-0.5);
-                explosionDirs[i+1] = y/len + (Math.random()-0.5);
+                const px=points[i], py=points[i+1];
+                const len = Math.sqrt(px*px + py*py) + 0.1;
+                explosionDirs[i] = px/len + (Math.random()-0.5);
+                explosionDirs[i+1] = py/len + (Math.random()-0.5);
                 explosionDirs[i+2] = (Math.random()-0.5)*2;
             }
 
             const mat = new THREE.PointsMaterial({
-                color: config.themes[0],
-                size: 0.8,
+                color: config.colors[0],
+                size: 0.9,
                 transparent: true, opacity: 0.9,
                 blending: THREE.AdditiveBlending
             });
@@ -261,271 +297,256 @@
             scene.add(particles);
         }
 
-        /* ==================== 3. 物理循环 ==================== */
+        /* ==================== 3. 逻辑循环 ==================== */
+        function onMouseMove(e) {
+            if(state.mode === 'MOUSE') {
+                state.mouse.x = (e.clientX - window.innerWidth/2) * 0.0005;
+                state.mouse.y = (e.clientY - window.innerHeight/2) * 0.0005;
+            }
+        }
+
         function updatePhysics() {
             if(!particles || state.action === 'PAUSED') return;
 
             const pos = particles.geometry.attributes.position.array;
             const orig = originalPos.array;
-            
-            // 旋转逻辑 (混合 Mouse 和 Hand)
-            let targetRotX, targetRotY;
+
+            // 1. 旋转控制
+            let tx, ty;
             if(state.mode === 'MOUSE') {
-                targetRotX = state.mouse.y;
-                targetRotY = state.mouse.x;
+                tx = state.mouse.y; ty = state.mouse.x;
             } else {
-                targetRotX = state.rotation.x;
-                targetRotY = state.rotation.y;
+                tx = state.targetRot.x; ty = state.targetRot.y;
             }
             // 惯性平滑
-            particles.rotation.x += (targetRotX - particles.rotation.x) * 0.1;
-            particles.rotation.y += (targetRotY - particles.rotation.y) * 0.1;
+            particles.rotation.x += (tx - particles.rotation.x) * 0.1;
+            particles.rotation.y += (ty - particles.rotation.y) * 0.1;
 
-
-            // 粒子位置状态机
+            // 2. 粒子行为
             for(let i=0; i<pos.length; i+=3) {
                 if(state.action === 'SHATTER') {
                     // 炸裂
-                    const speed = 30;
-                    pos[i] += (orig[i] + explosionDirs[i]*speed - pos[i]) * 0.1;
-                    pos[i+1] += (orig[i+1] + explosionDirs[i+1]*speed - pos[i+1]) * 0.1;
-                    pos[i+2] += (orig[i+2] + explosionDirs[i+2]*speed - pos[i+2]) * 0.1;
-                } 
-                else if (state.action === 'FALLING') {
-                    // 下落崩塌
+                    const f = 25; // 力度
+                    pos[i] += (orig[i] + explosionDirs[i]*f - pos[i]) * 0.1;
+                    pos[i+1] += (orig[i+1] + explosionDirs[i+1]*f - pos[i+1]) * 0.1;
+                    pos[i+2] += (orig[i+2] + explosionDirs[i+2]*f - pos[i+2]) * 0.1;
+                }
+                else if(state.action === 'FALLING') {
+                    // 下落
                     velocities[i+1] -= 0.05; // 重力
                     velocities[i] += (Math.random()-0.5)*0.1;
-                    
                     pos[i] += velocities[i];
                     pos[i+1] += velocities[i+1];
                     pos[i+2] += velocities[i+2];
 
-                    if(pos[i+1] < -100) { // 地面反弹
-                        pos[i+1] = -100;
-                        velocities[i+1] *= -0.4;
+                    if(pos[i+1] < -120) {
+                         pos[i+1] = -120; velocities[i+1] *= -0.5; 
                     }
                 }
                 else {
-                    // NORMAL: 聚合重组
-                    pos[i] += (orig[i] - pos[i]) * 0.1;
-                    pos[i+1] += (orig[i+1] - pos[i+1]) * 0.1;
-                    pos[i+2] += (orig[i+2] - pos[i+2]) * 0.1;
+                    // 聚合 (NORMAL)
+                    pos[i] += (orig[i] - pos[i]) * 0.12;
+                    pos[i+1] += (orig[i+1] - pos[i+1]) * 0.12;
+                    pos[i+2] += (orig[i+2] - pos[i+2]) * 0.12;
                 }
             }
             particles.geometry.attributes.position.needsUpdate = true;
         }
 
-        /* ==================== 4. AI 视觉逻辑 ==================== */
-        let gestureRecognizer;
-        let lastVideoTime = -1;
-        let wristHistory = []; // 用于挥手检测
-
-        async function initAI() {
-            const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.3/wasm");
-            gestureRecognizer = await GestureRecognizer.createFromOptions(vision, {
-                baseOptions: {
-                    modelAssetPath: "https://storage.googleapis.com/mediapipe-models/gesture_recognizer/gesture_recognizer/float16/1/gesture_recognizer.task",
-                    delegate: "GPU"
-                },
-                runningMode: "VIDEO",
-                numHands: 1
-            });
-            dom.loading.style.display = 'none';
+        function onResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
         }
 
-        async function predictWebcam() {
+        function animate(time) {
+            requestAnimationFrame(animate);
+            updatePhysics();
+            renderer.render(scene, camera);
+            
+            // FPS 计算
+            if(time - lastFrameTime > 1000) {
+                dom.stFps.innerText = Math.round(1000 / (time - lastFrameTime) * 60); // 粗略估算
+                lastFrameTime = time;
+            }
+        }
+
+        /* ==================== 4. MediaPipe 实时预测 ==================== */
+        const drawingUtils = new DrawingUtils(dom.canvas.getContext("2d"));
+        let wristHistory = [];
+
+        async function predictLoop() {
+            if(!dom.video.videoWidth) { requestAnimationFrame(predictLoop); return; }
+
             const now = Date.now();
-            if(dom.video.currentTime !== lastVideoTime && gestureRecognizer) {
+            if(dom.video.currentTime !== lastVideoTime) {
                 lastVideoTime = dom.video.currentTime;
-                const result = gestureRecognizer.recognizeForVideo(dom.video, now);
-                processGestures(result);
-                drawDebug(result);
+                const results = gestureRecognizer.recognizeForVideo(dom.video, now);
+
+                drawSkeleton(results);
+                processGestureLogic(results);
             }
-            requestAnimationFrame(predictWebcam);
+            requestAnimationFrame(predictLoop);
         }
 
-        // 核心手势解析
-        function processGestures(result) {
-            if(!result.landmarks || result.landmarks.length === 0) {
-                state.mode = 'MOUSE';
-                dom.stMode.innerText = 'MOUSE (No Hand)';
+        function drawSkeleton(results) {
+            const ctx = dom.canvas.getContext("2d");
+            ctx.clearRect(0,0, dom.canvas.width, dom.canvas.height);
+            dom.canvas.width = dom.video.videoWidth;
+            dom.canvas.height = dom.video.videoHeight;
+
+            if(results.landmarks && results.landmarks.length > 0) {
+                const lm = results.landmarks[0];
+                drawingUtils.drawConnectors(lm, GestureRecognizer.HAND_CONNECTIONS, {color: "#00f3ff", lineWidth: 3});
+                drawingUtils.drawLandmarks(lm, {color: "#ffffff", lineWidth: 1, radius: 3});
+            }
+        }
+
+        function processGestureLogic(results) {
+            // 1. 模式切换
+            if(!results.landmarks || results.landmarks.length === 0) {
+                if(state.mode !== 'MOUSE') {
+                    state.mode = 'MOUSE';
+                    dom.stInput.innerText = 'MOUSE (No Hand)';
+                    dom.stInput.style.color = '#ccc';
+                }
                 return;
             }
 
-            // 切换为手势模式
             state.mode = 'HAND';
-            dom.stMode.innerText = 'HAND CONTROL';
-            
-            const lm = result.landmarks[0];
-            const handedness = result.handedness[0].categoryName; // Left or Right
-            
-            // 关键点
+            dom.stInput.innerText = 'HAND TRACKING';
+            dom.stInput.style.color = '#00f3ff';
+
+            if(state.lockTimer > 0) { state.lockTimer--; return; }
+
+            // 2. 数据准备
+            const lm = results.landmarks[0];
             const thumb = lm[4], index = lm[8], wrist = lm[0];
+
+            // 3D 距离计算
+            const dist = (p1, p2) => Math.hypot(p1.x-p2.x, p1.y-p2.y, p1.z-p2.z);
             
-            // 1. 计算距离
-            const pinchDist = Math.hypot(thumb.x - index.x, thumb.y - index.y, thumb.z - index.z);
-            let totalTipDist = 0;
-            [4,8,12,16,20].forEach(i => totalTipDist += Math.hypot(lm[i].x - wrist.x, lm[i].y - wrist.y));
-            const avgOpenDist = totalTipDist / 5;
+            const pinchDist = dist(thumb, index);
+            
+            // 平均张开度
+            let openSum = 0;
+            [4,8,12,16,20].forEach(i => openSum += dist(lm[i], wrist));
+            const avgOpen = openSum / 5;
 
-            dom.stPinch.innerText = pinchDist.toFixed(3);
+            // 3. 核心状态机
 
-            // 冷却时间递减
-            if(state.gestureLock > 0) {
-                state.gestureLock--;
-                return;
-            }
-
-            // A. 握拳 (Fist) -> 暂停
-            // 简单判断：指尖到手腕距离都很小
-            if(avgOpenDist < 0.15) {
+            // A. 握拳 (优先判定)
+            if(avgOpen < config.thresholds.fist) {
                 if(state.action !== 'PAUSED') {
                     state.action = 'PAUSED';
-                    dom.pauseMask.style.display = 'block';
-                    showToast("✊ 暂停 Frozen");
-                    state.gestureLock = 30;
+                    showToast("✊ 已冻结 Paused");
                 } else {
                     state.action = 'NORMAL';
-                    dom.pauseMask.style.display = 'none';
-                    showToast("✊ 恢复 Resumed");
-                    state.gestureLock = 30;
+                    showToast("✊ 已恢复 Resumed");
                 }
-                return; // 暂停优于其他逻辑
+                state.lockTimer = 30; // 冷却
+                dom.stGesture.innerText = 'FIST';
+                return;
             }
+            if(state.action === 'PAUSED') return;
 
-            if(state.action === 'PAUSED') return; // 暂停时不处理其他
-
-            // B. 捏合旋转 (Pinch to Rotate) - 状态机
-            let pinchTrigger = state.isPinching ? config.pinchExit : config.pinchEnter;
-            
-            if(pinchDist < pinchTrigger) {
+            // B. 捏合旋转
+            let pTrigger = state.isPinching ? config.thresholds.pinchExit : config.thresholds.pinchEnter;
+            if(pinchDist < pTrigger) {
                 if(!state.isPinching) {
                     state.isPinching = true;
-                    state.handStart = { x: thumb.x, y: thumb.y };
+                    state.pinchStart = {x: thumb.x, y: thumb.y};
                 }
-                // 计算 Delta 映射到旋转
-                const dx = (thumb.x - state.handStart.x) * 3; 
-                const dy = (thumb.y - state.handStart.y) * 3;
+                // 映射旋转
+                const dx = (thumb.x - state.pinchStart.x) * 4;
+                const dy = (thumb.y - state.pinchStart.y) * 4;
+                state.targetRot.y -= dx * 0.1;
+                state.targetRot.x += dy * 0.1;
                 
-                // 叠加旋转 (平滑)
-                state.rotation.y -= dx * 0.1;
-                state.rotation.x += dy * 0.1;
-                
-                dom.stStatus.innerText = "PINCH ROTATING";
-                return; // 捏合时阻断其他
+                dom.stGesture.innerText = 'PINCH ROTATE';
+                return;
             } else {
                 state.isPinching = false;
             }
 
-            // C. 动态挥手 (Swipes)
-            // 记录历史位置
+            // C. 挥手检测 (History based)
             wristHistory.push({x: wrist.x, y: wrist.y, t: Date.now()});
             if(wristHistory.length > 8) wristHistory.shift();
-            
+
             if(wristHistory.length === 8) {
                 const start = wristHistory[0], end = wristHistory[7];
-                const dx = end.x - start.x;
                 const dy = end.y - start.y;
-                const dt = end.t - start.t;
-                const speed = Math.hypot(dx, dy) / dt * 1000; // units/sec
+                const dx = end.x - start.x;
 
-                // 下挥 -> 崩塌
-                if(dy > 0.15) { // Y坐标向下增加 (MediaPipe Y向下为正)
-                    if(state.action !== 'FALLING') {
-                        state.action = 'FALLING';
-                        // 重置速度
-                        for(let i=0; i<velocities.length; i++) velocities[i] = (Math.random()-0.5);
-                        showToast("👇 崩塌 Falling");
-                        state.gestureLock = 40;
-                    }
+                // MediaPipe Y坐标向下为正: dy > 0 是向下
+                if(dy > 0.15) {
+                    state.action = 'FALLING';
+                    // 重置速度
+                    for(let i=0; i<velocities.length; i++) velocities[i] = (Math.random()-0.5);
+                    dom.stGesture.innerText = 'SWIPE DOWN';
+                    showToast("👇 重力崩塌");
+                    state.lockTimer = 20;
+                    return;
                 }
-                // 上挥 -> 重组
-                else if(dy < -0.15) {
-                    if(state.action !== 'NORMAL') {
-                        state.action = 'NORMAL';
-                        showToast("👆 重组 Reassemble");
-                        state.gestureLock = 40;
-                    }
-                }
-                // 侧挥 -> 换色
-                else if(Math.abs(dx) > 0.2) {
-                    switchTheme();
-                    showToast("↔️ 换色 Theme Changed");
-                    state.gestureLock = 40;
+                if(dy < -0.15) {
+                    state.action = 'NORMAL';
+                    dom.stGesture.innerText = 'SWIPE UP';
+                    showToast("👆 聚合重组");
+                    state.lockTimer = 20;
+                    return;
                 }
             }
 
-            // D. 张手炸裂 (Open)
-            if(avgOpenDist > config.openThresh) {
+            // D. 张手炸裂
+            if(avgOpen > config.thresholds.open) {
                 state.action = 'SHATTER';
-                dom.stStatus.innerText = "OPEN SHATTER";
+                dom.stGesture.innerText = 'OPEN SHATTER';
             } else if (state.action === 'SHATTER') {
-                state.action = 'NORMAL'; // 恢复
+                state.action = 'NORMAL'; // 自动回弹
+            } else {
+                dom.stGesture.innerText = 'TRACKING';
             }
 
-            // E. 竖大拇指 (Thumb Up)
-            // 简单几何：拇指指尖高于IP关节，其他指尖低于MCP
-            const thumbIsUp = thumb.y < lm[3].y; // Y越小越高
-            const othersCurled = lm[12].y > lm[9].y && lm[16].y > lm[13].y;
+            // E. 大拇指点赞 (Thumb Up)
+            // 拇指尖在最上方，且其他四指卷曲
+            const isThumbUp = thumb.y < lm[3].y; // y小为上
+            const othersCurled = lm[12].y > lm[10].y && lm[16].y > lm[14].y;
             
-            if(thumbIsUp && othersCurled && !state.isPinching) {
-                showToast("👍 编译通过 Success");
-                // 瞬时特效：变绿
-                const oldC = particles.material.color.getHex();
+            if(isThumbUp && othersCurled && !state.isPinching) {
+                showToast("👍 编译成功!");
                 particles.material.color.setHex(0x00ff00);
-                setTimeout(() => particles.material.color.setHex(config.themes[config.currTheme]), 1000);
-                state.gestureLock = 60;
+                setTimeout(() => particles.material.color.setHex(config.colors[config.colorIdx]), 800);
+                state.lockTimer = 40;
+                dom.stGesture.innerText = 'THUMB UP';
             }
         }
 
-        // 调试绘制
-        const drawingUtils = new DrawingUtils(dom.canvas2d.getContext('2d'));
-        function drawDebug(result) {
-            const ctx = dom.canvas2d.getContext('2d');
-            ctx.clearRect(0,0, dom.canvas2d.width, dom.canvas2d.height);
-            dom.canvas2d.width = dom.video.videoWidth;
-            dom.canvas2d.height = dom.video.videoHeight;
-            if(result.landmarks) {
-                for(const lm of result.landmarks) {
-                    drawingUtils.drawConnectors(lm, GestureRecognizer.HAND_CONNECTIONS, {color:"#00f3ff", lineWidth: 2});
-                    drawingUtils.drawLandmarks(lm, {color:"#fff", radius:2});
-                }
-            }
-        }
-
-        /* ==================== 5. 辅助功能 ==================== */
-        function switchTheme() {
-            config.currTheme = (config.currTheme + 1) % config.themes.length;
-            particles.material.color.setHex(config.themes[config.currTheme]);
-        }
+        /* ==================== 5. 交互绑定 ==================== */
+        dom.btnCam.addEventListener('click', () => {
+            dom.btnCam.innerText = "正在启动...";
+            navigator.mediaDevices.getUserMedia({video: true}).then(stream => {
+                dom.video.srcObject = stream;
+                dom.video.addEventListener('loadeddata', predictLoop);
+                dom.btnCam.innerText = "摄像头运行中";
+            }).catch(err => {
+                alert("摄像头访问被拒绝");
+                dom.btnCam.innerText = "启动失败";
+            });
+        });
 
         function showToast(msg) {
             dom.toast.innerText = msg;
             dom.toast.style.opacity = 1;
-            dom.toast.style.top = '20%';
+            dom.toast.style.top = '120px';
             setTimeout(() => {
                 dom.toast.style.opacity = 0;
-                dom.toast.style.top = '15%';
-            }, 2000);
+                dom.toast.style.top = '100px';
+            }, 1500);
         }
 
-        document.getElementById('btn-cam').addEventListener('click', () => {
-            navigator.mediaDevices.getUserMedia({video: true}).then(stream => {
-                dom.video.srcObject = stream;
-                dom.video.addEventListener('loadeddata', predictWebcam);
-            });
-        });
-
-        function animate() {
-            requestAnimationFrame(animate);
-            updatePhysics();
-            renderer.render(scene, camera);
-        }
-
-        // 入口
+        // 启动流程
         initThree();
-        initAI();
-        animate();
+        initVision(); // 异步加载 AI
 
     </script>
 </body>
